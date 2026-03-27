@@ -4,6 +4,7 @@ const Io = std.Io;
 const zigdis = @import("zigdis");
 
 const Server = @import("server.zig").Server;
+const Parser = @import("parser.zig");
 
 pub fn main(init: std.process.Init) !void {
     const host = "127.0.0.1";
@@ -15,6 +16,12 @@ pub fn main(init: std.process.Init) !void {
     var listening = try server.listen();
 
     while (true) {
+        const gpa = init.gpa;
+        var arena = std.heap.ArenaAllocator.init(gpa);
+        defer arena.deinit();
+
+        const allocator = arena.allocator();
+
         var connection = listening.accept(io) catch |err| {
             std.debug.print("Connection to client interrupted: {}\n", .{err});
             continue;
@@ -26,8 +33,16 @@ pub fn main(init: std.process.Init) !void {
         var reader = connection.reader(io, &read_buffer);
         const reader_interface = &reader.interface;
 
-        const line = try reader_interface.takeDelimiterInclusive('\n');
+        var command = Parser.parseCommand(reader_interface, allocator) catch |err| {
+            std.debug.print("Failed to parse command: {}\n", .{err});
+            continue;
+        };
 
-        std.debug.print("Hello: {s}\n", .{line});
+        const count = command.count();
+
+        const first_arg = command.get_arg(0).data;
+
+        std.debug.print("Arg_count: {d}\n", .{count});
+        std.debug.print("first arg: {s}\n", .{first_arg});
     }
 }
